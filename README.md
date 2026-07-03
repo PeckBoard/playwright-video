@@ -2,7 +2,7 @@
 
 LogRocket-style replay for PeckBoard's browser tests, served as a WASM plugin.
 
-PeckBoard core (>= 0.0.52) records every `browser_*` tool session as a test
+PeckBoard core (>= 0.0.53) records every `browser_*` tool session as a test
 run: each `browser_open` starts a run, every `browser_act` appends a
 timestamped step with a server-side screenshot frame, and `browser_close`
 finalizes it. Frames are captured out of the agent's token budget — they
