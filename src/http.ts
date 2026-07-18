@@ -44,7 +44,7 @@ export function serveAuthed(payload: any): string {
   return jsonResponse(404, { error: "not found" });
 }
 
-/// The run list, with steps reduced to a count (the player refetches the
+/// The run list, with steps reduced to counts (the player refetches the
 /// full run on open) — keeps the list payload small for many runs.
 export function summarizeRuns(): any {
   const { runs } = listRuns();
@@ -60,10 +60,20 @@ export function summarizeRuns(): any {
       ended_ms: r.ended_ms ?? null,
       step_count: r.steps.length,
       frame_count: r.steps.filter((s) => !!s.frame).length,
+      request_count: (r.network ?? []).length,
+      error_count: countErrors(r),
     })),
   };
 }
 
+/// Failed/4xx/5xx requests plus console errors — the run list's red badge.
+export function countErrors(r: import("./host").RunMeta): number {
+  const netErrs = (r.network ?? []).filter(
+    (n) => !!n.failure || (n.status ?? 0) >= 400
+  ).length;
+  const conErrs = (r.console_events ?? []).filter((c) => c.level === "error").length;
+  return netErrs + conErrs;
+}
 function requireParam(query: string, name: string): string {
   const v = queryParam(query, name);
   if (v === undefined || v.trim() === "") {

@@ -3,9 +3,10 @@
 
 const DESCRIPTION =
   "Playwright test videos for Peckboard: LogRocket-style replay of recorded " +
-  "browser test runs (per-step frames, time-scaled playback, action event " +
-  "track), served as a WASM plugin.";
-const VERSION = "0.1.0";
+  "browser test runs — network waterfall with masked request/response " +
+  "detail, console panel, event timeline, and time-scaled playback with " +
+  "inactivity skipping. Served as a WASM plugin.";
+const VERSION = "0.2.0";
 const REPOSITORY = "https://github.com/PeckBoard/playwright-video";
 
 /// Build the manifest JSON string. `index.ts`'s `manifest()` export wraps this.

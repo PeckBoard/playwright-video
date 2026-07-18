@@ -27,7 +27,34 @@ export interface RunStep {
   frame?: string;
 }
 
-/// One recorded browser test run (mirrors core's `RunMeta`).
+/// One captured network request+response (mirrors core's `NetEvent`).
+/// Every string surface is masked by core before persisting.
+export interface NetEvent {
+  id: number;
+  ts_ms: number;
+  dur_ms?: number;
+  method: string;
+  url: string;
+  resource_type: string;
+  status?: number;
+  failure?: string;
+  req_headers?: Record<string, string>;
+  req_body?: string;
+  resp_headers?: Record<string, string>;
+  resp_body?: string;
+  resp_body_truncated?: boolean;
+  size?: number;
+}
+
+/// One captured console line (mirrors core's `ConsoleEvent`).
+export interface ConsoleEvent {
+  ts_ms: number;
+  level: string;
+  text: string;
+}
+
+/// One recorded browser test run (mirrors core's `RunMeta`). The capture
+/// fields are absent on runs recorded before network capture existed.
 export interface RunMeta {
   id: string;
   name: string;
@@ -38,6 +65,10 @@ export interface RunMeta {
   started_ms: number;
   ended_ms?: number;
   steps: RunStep[];
+  network?: NetEvent[];
+  console_events?: ConsoleEvent[];
+  network_truncated?: number;
+  console_truncated?: number;
 }
 
 /// All recorded runs, newest first.

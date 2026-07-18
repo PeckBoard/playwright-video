@@ -8,15 +8,39 @@ timestamped step with a server-side screenshot frame, and `browser_close`
 finalizes it. Frames are captured out of the agent's token budget — they
 never enter model context.
 
-This plugin adds a **Playwright Tests** entry to the left rail (directly
-below Sessions) that opens a full-page view:
+Cores with the capture sidecar additionally record, per run:
 
-- **Run list** — every recorded run with status, age, duration, step and
-  frame counts; refreshes live while runs are recording.
-- **Replay player** — time-scaled playback of the run's frames (inactivity
-  gaps clamped, LogRocket-style), a seekable timeline with per-step ticks,
-  an action event track (click/type/navigate/… chips), play/pause with
-  0.5–4× speed, keyboard stepping, and the raw action payload per step.
+- **Network traffic** — every request/response with method, URL, status,
+  timing, headers, and JSON/text bodies.
+- **Console output** — console lines and uncaught page errors.
+
+All captured strings are masked by core (`service/redact.rs`) **before they
+are persisted**: sensitive headers (authorization, cookies, API keys),
+sensitive JSON/form/query keys (passwords, tokens, secrets), and
+secret-shaped values in free text (Bearer/Basic credentials, JWTs,
+Luhn-valid card numbers) never reach disk — and therefore never reach this
+plugin.
+
+This plugin adds a **Playwright Tests** entry to the left rail (directly
+below Sessions) that opens a full-page replay view:
+
+- **Run list** — every recorded run with status, age, duration, step,
+  request, and error counts; refreshes live while runs are recording.
+- **Replay player** — continuous time-scaled playback with a *Skipping
+  inactivity* toggle (gaps compressed LogRocket-style), 0.5–8× speeds, a
+  scrubber with step ticks and error markers, and keyboard stepping.
+- **Network panel** — waterfall table (status, method, request, timing bar
+  on the shared time axis) with a text filter and type chips
+  (XHR/Doc/JS/CSS/Img/Font/…); rows light up as playback passes them; a
+  detail drawer shows masked headers and pretty-printed masked bodies.
+- **Console panel** — level-filtered console/pageerror entries with an
+  error badge, click-to-seek.
+- **Event timeline** — human-readable step list (navigation, clicks, typed
+  text, rage-click detection) with click-to-seek, plus a **Session
+  details** tab (session/project/card, duration, counts).
+
+Runs recorded by older cores (no capture) still replay — the network and
+console panels show an explanatory empty state.
 
 ## Architecture
 
