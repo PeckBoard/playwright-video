@@ -53,6 +53,17 @@ export interface ConsoleEvent {
   text: string;
 }
 
+/// One sampled pointer position (mirrors core's `PointerEvent`) — cursor
+/// replay. `t` is "move" or "down"; x/y are CSS px in a vw×vh viewport.
+export interface PointerEvent {
+  ts_ms: number;
+  t: string;
+  x: number;
+  y: number;
+  vw?: number;
+  vh?: number;
+}
+
 /// One recorded browser test run (mirrors core's `RunMeta`). The capture
 /// fields are absent on runs recorded before network capture existed.
 export interface RunMeta {
@@ -69,6 +80,8 @@ export interface RunMeta {
   console_events?: ConsoleEvent[];
   network_truncated?: number;
   console_truncated?: number;
+  pointer_events?: PointerEvent[];
+  pointer_truncated?: number;
 }
 
 /// All recorded runs, newest first.

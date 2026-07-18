@@ -55,6 +55,8 @@ export const PAGE: string = `<!doctype html>
   #noframe { color: var(--dim); }
   #overlay { position: absolute; left: 12px; bottom: 12px; max-width: 72%; background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 12px; box-shadow: 0 2px 10px rgba(60,40,120,.10); }
   #overlay .act { color: var(--accent); font-weight: 700; }
+  #cursor { position: absolute; z-index: 4; pointer-events: none; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: rgba(108,92,231,.85); border: 2px solid #fff; box-shadow: 0 1px 6px rgba(60,40,120,.45); }
+  #ripple { position: absolute; z-index: 3; pointer-events: none; border-radius: 50%; border: 2px solid var(--accent); transform: translate(-50%, -50%); }
 
   /* ── dock (network / console) ── */
   #dock { flex: 1 1 34%; min-height: 150px; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--panel); position: relative; }
@@ -153,6 +155,8 @@ export const PAGE: string = `<!doctype html>
     <img id="frame" alt="" hidden />
     <div id="noframe">Select a test run to replay it.</div>
     <div id="overlay" hidden><span class="act"></span> <span class="tgt"></span></div>
+    <div id="cursor" hidden></div>
+    <div id="ripple" hidden></div>
   </div>
   <div id="dock" hidden>
     <div id="dockbar">
@@ -349,6 +353,8 @@ export const PAGE: string = `<!doctype html>
       }
       var con = run.console_events || [];
       for (i = 0; i < con.length; i++) pts.push(con[i].ts_ms - run.started_ms);
+      var ptr = run.pointer_events || [];
+      for (i = 0; i < ptr.length; i += 4) pts.push(ptr[i].ts_ms - run.started_ms);
       if (run.ended_ms) pts.push(run.ended_ms - run.started_ms);
     }
     pts = pts.filter(function (p) { return isFinite(p) && p >= 0; });
@@ -793,6 +799,7 @@ export const PAGE: string = `<!doctype html>
     row("Duration", run.ended_ms ? fmtDur(run.ended_ms - run.started_ms) : "still running");
     row("Steps", run.steps.length);
     row("Frames", run.steps.filter(function (s) { return !!s.frame; }).length);
+    row("Pointer samples", (run.pointer_events || []).length || null);
     row("Requests", net.length + (run.network_truncated ? " (+" + run.network_truncated + " dropped)" : ""));
     row("Failed requests", failed || null);
     row("Console errors", errs || null);
@@ -838,7 +845,10 @@ export const PAGE: string = `<!doctype html>
       if (img.dataset.cur !== name) { img.src = frames[name]; img.dataset.cur = name; }
       img.hidden = false;
     } else {
-      fetchFrame(name, function () { showFrame(t); });
+      // Re-render (not just re-show) once the frame arrives: the cursor
+      // overlay maps onto the frame's displayed rect, which only exists
+      // after the image is loaded.
+      fetchFrame(name, function () { render(); });
     }
     // Prefetch the next few frames.
     var seen = 0;
@@ -847,6 +857,80 @@ export const PAGE: string = `<!doctype html>
     }
   }
 
+  // ── cursor replay ──
+  function pointerIdxFor(t) {
+    var ptr = run.pointer_events || [];
+    var lo = 0, hi = ptr.length - 1, best = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (ptr[mid].ts_ms - run.started_ms <= t) { best = mid; lo = mid + 1; }
+      else { hi = mid - 1; }
+    }
+    return best;
+  }
+  function frameRect() {
+    // The frame uses object-fit: contain — find the actual displayed image
+    // box inside the element so page coords map onto real pixels.
+    var img = byId("frame");
+    if (img.hidden || !img.naturalWidth || !img.naturalHeight) return null;
+    var stage = byId("stage").getBoundingClientRect();
+    var box = img.getBoundingClientRect();
+    var scale = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
+    var w = img.naturalWidth * scale;
+    var h = img.naturalHeight * scale;
+    return {
+      left: box.left - stage.left + (box.width - w) / 2,
+      top: box.top - stage.top + (box.height - h) / 2,
+      w: w, h: h
+    };
+  }
+  function drawCursor(t) {
+    var cur = byId("cursor");
+    var rip = byId("ripple");
+    var ptr = run ? (run.pointer_events || []) : [];
+    var i = ptr.length ? pointerIdxFor(t) : -1;
+    var rect = i >= 0 ? frameRect() : null;
+    if (!rect) { cur.hidden = true; rip.hidden = true; return; }
+    var p = ptr[i];
+    var vw = p.vw || 0, vh = p.vh || 0;
+    if (!vw || !vh) { cur.hidden = true; rip.hidden = true; return; }
+    var fx = p.x / vw, fy = p.y / vh;
+    // Ease toward the next sample when it is close in time.
+    var n = ptr[i + 1];
+    if (n && n.vw && n.vh) {
+      var pt = p.ts_ms - run.started_ms;
+      var nt = n.ts_ms - run.started_ms;
+      var gap = nt - pt;
+      if (gap > 0 && gap < 1500) {
+        var f = Math.max(0, Math.min(1, (t - pt) / gap));
+        fx += (n.x / n.vw - fx) * f;
+        fy += (n.y / n.vh - fy) * f;
+      }
+    }
+    cur.hidden = false;
+    cur.style.left = (rect.left + fx * rect.w).toFixed(1) + "px";
+    cur.style.top = (rect.top + fy * rect.h).toFixed(1) + "px";
+    // Click ripple: latest mousedown within the last 450ms of playhead.
+    var down = null;
+    for (var j = i; j >= 0 && ptr[j].ts_ms - run.started_ms >= t - 450; j--) {
+      if (ptr[j].t === "down") { down = ptr[j]; break; }
+    }
+    if (down && down.vw && down.vh) {
+      var age = (t - (down.ts_ms - run.started_ms)) / 450;
+      var size = 10 + 26 * age;
+      rip.hidden = false;
+      rip.style.left = (rect.left + (down.x / down.vw) * rect.w).toFixed(1) + "px";
+      rip.style.top = (rect.top + (down.y / down.vh) * rect.h).toFixed(1) + "px";
+      rip.style.width = size.toFixed(1) + "px";
+      rip.style.height = size.toFixed(1) + "px";
+      rip.style.opacity = String(Math.max(0, 1 - age));
+    } else {
+      rip.hidden = true;
+    }
+  }
+  // Image decode is async even for data URLs — the displayed rect (and so
+  // the cursor overlay) is only computable after load.
+  byId("frame").addEventListener("load", function () { if (run) render(); });
   // ── render loop ──
   function activeStepFor(t) {
     var best = -1;
@@ -860,6 +944,7 @@ export const PAGE: string = `<!doctype html>
     vt = Math.max(0, Math.min(vt, vspan));
     var t = realOf(vt);
     showFrame(t);
+    drawCursor(t);
     // overlay
     var si = activeStepFor(t);
     var ov = byId("overlay");
