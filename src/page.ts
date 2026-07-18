@@ -71,7 +71,9 @@ export const PAGE: string = `<!doctype html>
   table#nettbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
   #nettbl th { position: sticky; top: 0; background: var(--panel2); color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); z-index: 1; }
   #nettbl td { padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #nettbl col.c-st { width: 64px; } #nettbl col.c-m { width: 58px; } #nettbl col.c-n { width: 38%; } #nettbl col.c-w { width: auto; }
+  #nettbl col.c-st { width: 64px; } #nettbl col.c-m { width: 58px; } #nettbl col.c-n { width: 38%; } #nettbl col.c-t { width: 74px; } #nettbl col.c-w { width: auto; }
+  #nettbl .tcol { text-align: right; }
+  #nettbl td.tcol { color: var(--dim); font-variant-numeric: tabular-nums; }
   .nrow { cursor: pointer; }
   .nrow:hover td { background: var(--panel2); }
   .nrow.sel td { background: var(--accent-soft); }
@@ -172,8 +174,8 @@ export const PAGE: string = `<!doctype html>
     </div>
     <div id="dockbody">
       <table id="nettbl">
-        <colgroup><col class="c-st"/><col class="c-m"/><col class="c-n"/><col class="c-w"/></colgroup>
-        <thead><tr><th>Status</th><th>Method</th><th>Request</th><th id="wfhead">Waterfall</th></tr></thead>
+        <colgroup><col class="c-st"/><col class="c-m"/><col class="c-n"/><col class="c-t"/><col class="c-w"/></colgroup>
+        <thead><tr><th>Status</th><th>Method</th><th>Request</th><th class="tcol">Time</th><th id="wfhead">Waterfall</th></tr></thead>
         <tbody id="netrows"></tbody>
       </table>
       <div id="netempty" hidden></div>
@@ -551,6 +553,9 @@ export const PAGE: string = `<!doctype html>
       var name = el("td", null, shortUrl(ne.url));
       name.title = ne.method + " " + ne.url;
       tr.appendChild(name);
+      var tm = el("td", "tcol", ne.dur_ms != null ? fmtDur(ne.dur_ms) : "…");
+      tm.title = ne.dur_ms != null ? ne.dur_ms + " ms" : "pending";
+      tr.appendChild(tm);
       var wf = el("td", "wf");
       var bar = el("div", "bar" + (isNetErr(ne) ? " err" : (ne.status == null ? " pend" : "")));
       var v0 = virtualOf(ne.ts_ms - run.started_ms) / vspan * 100;
