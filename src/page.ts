@@ -11,6 +11,7 @@ export const PAGE: string = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Playwright Tests</title>
 <style>
   :root {
@@ -147,6 +148,27 @@ export const PAGE: string = `<!doctype html>
   #details dt { color: var(--dim); }
   #details dd { margin: 0; word-break: break-word; }
   #sideempty { padding: 22px 14px; color: var(--dim); }
+
+  /* ── mobile (iframe ≤760px wide, e.g. phones): stack the three columns ── */
+  @media (max-width: 760px) {
+    html, body { height: auto; }
+    body { display: flex; flex-direction: column; min-height: 100dvh; }
+    #runs { flex: none; border-right: none; border-bottom: 1px solid var(--line); max-height: 32vh; overflow-y: auto; }
+    #main { flex: none; }
+    /* controls directly under the video: stage → player → dock */
+    #stage { order: 0; flex: none; height: 56vw; min-height: 170px; max-height: 42vh; }
+    #player { order: 1; border-top: 1px solid var(--line); }
+    #dock { order: 2; flex: none; }
+    #dockbody { max-height: 45vh; }
+    #drawer { width: 100%; min-width: 0; }
+    #netfilter { max-width: none; }
+    #nettbl { table-layout: auto; }
+    #nettbl th:nth-child(5), #nettbl td:nth-child(5), #nettbl col.c-w { display: none; }
+    #nettbl th, #nettbl td { padding: 4px 6px; }
+    #side { flex: none; border-left: none; border-top: 1px solid var(--line); }
+    #sidebody { max-height: 50vh; }
+    #overlay { max-width: calc(100% - 24px); }
+  }
 </style>
 </head>
 <body>

@@ -6,7 +6,7 @@ const DESCRIPTION =
   "browser test runs — network waterfall with masked request/response " +
   "detail, console panel, event timeline, cursor replay with click ripples, " +
   "and time-scaled playback with inactivity skipping. Served as a WASM plugin.";
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 const REPOSITORY = "https://github.com/PeckBoard/playwright-video";
 
 /// Build the manifest JSON string. `index.ts`'s `manifest()` export wraps this.
