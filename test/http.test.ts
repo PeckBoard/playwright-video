@@ -30,6 +30,8 @@ describe("manifest", () => {
     const m = JSON.parse(manifestJson());
     expect(m.sidebar_items[0].id).toBe("playwright-tests");
     expect(m.sidebar_items[0].path).toBe("/plugin-api/v1/playwright-video");
+    expect(m.sidebar_items[0].icon).toMatch(/^<svg /);
+    expect(m.sidebar_items[0].icon).toContain('stroke="currentColor"');
     expect(m.hooks).toContain("http.request.authed");
     expect(m.ui_routes).toContain("GET /api/plugin-ui/playwright-video/frame");
     expect(m.permissions).toContain("browser_runs_read");

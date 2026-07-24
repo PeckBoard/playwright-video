@@ -1,6 +1,6 @@
 {
   "name": "peckboard-playwright-video-plugin",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "Peckboard playwright-video WASM plugin (Extism js-pdk / TypeScript) — LogRocket-style replay of recorded browser test runs",
   "scripts": {
