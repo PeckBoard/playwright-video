@@ -5,8 +5,10 @@ const DESCRIPTION =
   "Playwright test videos for Peckboard: LogRocket-style replay of recorded " +
   "browser test runs — network waterfall with masked request/response " +
   "detail, console panel, event timeline, cursor replay with click ripples, " +
-  "and time-scaled playback with inactivity skipping. Served as a WASM plugin.";
-const VERSION = "0.3.3";
+  "time-scaled playback with inactivity skipping, and one-click MP4 export " +
+  "of a run (WebCodecs H.264, encoded fully client-side). Served as a WASM " +
+  "plugin.";
+const VERSION = "0.4.0";
 const REPOSITORY = "https://github.com/PeckBoard/playwright-video";
 
 // Inline SVG (lucide "video") for the sidebar entry; rendered sandboxed.

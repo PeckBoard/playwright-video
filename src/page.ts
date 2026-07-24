@@ -4,10 +4,14 @@
 // Served as one self-contained HTML string into the sandboxed iframe; all
 // data arrives through the parent-proxied /api/plugin-ui/* fetch bridge.
 // DOM is built with textContent only — run names/urls/bodies are untrusted.
-// NOTE: this is a TS template literal — the embedded JS must avoid backticks,
-// dollar-brace, and backslash escapes.
+// NOTE: SHELL/APP below are TS template literals — the embedded JS must avoid
+// backticks, dollar-brace, and backslash escapes. The vendored mp4-muxer build
+// (which uses all three freely) is injected between them as its own <script>
+// tag; the tests verify it contains no </script> terminator.
 
-export const PAGE: string = `<!doctype html>
+import MUXER_JS from "./vendor/mp4-muxer.txt";
+
+const SHELL: string = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -127,6 +131,8 @@ export const PAGE: string = `<!doctype html>
   #skip.off { color: var(--dim); font-weight: 400; }
   #skip .box { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
   #skip.off .box { border-color: var(--dim); color: transparent; }
+  #exportstat { color: var(--dim); font-size: 12px; }
+  #exportstat.err { color: var(--err); }
 
   /* ── right sidebar ── */
   #side { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
@@ -217,6 +223,8 @@ export const PAGE: string = `<!doctype html>
       <button id="play">▶ Play</button>
       <span id="speeds"></span>
       <span id="skip"><span class="box">✓</span>Skipping inactivity</span>
+      <button id="export" title="Export this run as an MP4 video">⬇ MP4</button>
+      <span id="exportstat" hidden></span>
     </div>
   </div>
 </div>
@@ -233,7 +241,9 @@ export const PAGE: string = `<!doctype html>
   </div>
 </div>
 
-<script>
+`;
+
+const APP: string = `<script>
 (function () {
   "use strict";
 
@@ -885,15 +895,45 @@ export const PAGE: string = `<!doctype html>
   }
 
   // ── cursor replay ──
-  function pointerIdxFor(t) {
-    var ptr = run.pointer_events || [];
-    var lo = 0, hi = ptr.length - 1, best = -1;
+  // Cursor position + click ripple at real time t, in frame-normalized 0..1
+  // coords. Shared by the DOM overlay and the MP4 export canvas renderer.
+  function cursorState(r, t) {
+    var ptr = r.pointer_events || [];
+    var lo = 0, hi = ptr.length - 1, i = -1;
     while (lo <= hi) {
       var mid = (lo + hi) >> 1;
-      if (ptr[mid].ts_ms - run.started_ms <= t) { best = mid; lo = mid + 1; }
+      if (ptr[mid].ts_ms - r.started_ms <= t) { i = mid; lo = mid + 1; }
       else { hi = mid - 1; }
     }
-    return best;
+    if (i < 0) return null;
+    var p = ptr[i];
+    var vw = p.vw || 0, vh = p.vh || 0;
+    if (!vw || !vh) return null;
+    var fx = p.x / vw, fy = p.y / vh;
+    // Ease toward the next sample when it is close in time.
+    var n = ptr[i + 1];
+    if (n && n.vw && n.vh) {
+      var pt = p.ts_ms - r.started_ms;
+      var nt = n.ts_ms - r.started_ms;
+      var gap = nt - pt;
+      if (gap > 0 && gap < 1500) {
+        var f = Math.max(0, Math.min(1, (t - pt) / gap));
+        fx += (n.x / n.vw - fx) * f;
+        fy += (n.y / n.vh - fy) * f;
+      }
+    }
+    // Click ripple: latest mousedown within the last 450ms of t.
+    var down = null;
+    for (var j = i; j >= 0 && ptr[j].ts_ms - r.started_ms >= t - 450; j--) {
+      if (ptr[j].t === "down") {
+        var d = ptr[j];
+        if (d.vw && d.vh) {
+          down = { fx: d.x / d.vw, fy: d.y / d.vh, age: (t - (d.ts_ms - r.started_ms)) / 450 };
+        }
+        break;
+      }
+    }
+    return { fx: fx, fy: fy, down: down };
   }
   function frameRect() {
     // The frame uses object-fit: contain — find the actual displayed image
@@ -914,43 +954,20 @@ export const PAGE: string = `<!doctype html>
   function drawCursor(t) {
     var cur = byId("cursor");
     var rip = byId("ripple");
-    var ptr = run ? (run.pointer_events || []) : [];
-    var i = ptr.length ? pointerIdxFor(t) : -1;
-    var rect = i >= 0 ? frameRect() : null;
+    var st = run ? cursorState(run, t) : null;
+    var rect = st ? frameRect() : null;
     if (!rect) { cur.hidden = true; rip.hidden = true; return; }
-    var p = ptr[i];
-    var vw = p.vw || 0, vh = p.vh || 0;
-    if (!vw || !vh) { cur.hidden = true; rip.hidden = true; return; }
-    var fx = p.x / vw, fy = p.y / vh;
-    // Ease toward the next sample when it is close in time.
-    var n = ptr[i + 1];
-    if (n && n.vw && n.vh) {
-      var pt = p.ts_ms - run.started_ms;
-      var nt = n.ts_ms - run.started_ms;
-      var gap = nt - pt;
-      if (gap > 0 && gap < 1500) {
-        var f = Math.max(0, Math.min(1, (t - pt) / gap));
-        fx += (n.x / n.vw - fx) * f;
-        fy += (n.y / n.vh - fy) * f;
-      }
-    }
     cur.hidden = false;
-    cur.style.left = (rect.left + fx * rect.w).toFixed(1) + "px";
-    cur.style.top = (rect.top + fy * rect.h).toFixed(1) + "px";
-    // Click ripple: latest mousedown within the last 450ms of playhead.
-    var down = null;
-    for (var j = i; j >= 0 && ptr[j].ts_ms - run.started_ms >= t - 450; j--) {
-      if (ptr[j].t === "down") { down = ptr[j]; break; }
-    }
-    if (down && down.vw && down.vh) {
-      var age = (t - (down.ts_ms - run.started_ms)) / 450;
-      var size = 10 + 26 * age;
+    cur.style.left = (rect.left + st.fx * rect.w).toFixed(1) + "px";
+    cur.style.top = (rect.top + st.fy * rect.h).toFixed(1) + "px";
+    if (st.down) {
+      var size = 10 + 26 * st.down.age;
       rip.hidden = false;
-      rip.style.left = (rect.left + (down.x / down.vw) * rect.w).toFixed(1) + "px";
-      rip.style.top = (rect.top + (down.y / down.vh) * rect.h).toFixed(1) + "px";
+      rip.style.left = (rect.left + st.down.fx * rect.w).toFixed(1) + "px";
+      rip.style.top = (rect.top + st.down.fy * rect.h).toFixed(1) + "px";
       rip.style.width = size.toFixed(1) + "px";
       rip.style.height = size.toFixed(1) + "px";
-      rip.style.opacity = String(Math.max(0, 1 - age));
+      rip.style.opacity = String(Math.max(0, 1 - st.down.age));
     } else {
       rip.hidden = true;
     }
@@ -1071,6 +1088,240 @@ export const PAGE: string = `<!doctype html>
     render();
   });
 
+  // ── MP4 export: canvas-render the virtual timeline, H.264-encode each
+  // frame via WebCodecs, mux with the vendored mp4-muxer build, download
+  // as <run-name>.mp4. Runs off a snapshot of the run + time map, so live
+  // refreshes and toggles can't shift the timeline mid-export.
+  var exporting = false;
+  var exportCancel = false;
+  var EXPORT_FPS = 30;
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function setExportStat(msg, isErr) {
+    var s = byId("exportstat");
+    s.hidden = !msg;
+    s.textContent = msg || "";
+    s.className = isErr ? "err" : "";
+  }
+  function loadImage(src) {
+    return new Promise(function (resolve, reject) {
+      var im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { reject(new Error("frame decode failed")); };
+      im.src = src;
+    });
+  }
+  function fetchFrameData(r, name) {
+    if (frames[name] && frames[name] !== "pending") return Promise.resolve(frames[name]);
+    return getJson("/api/plugin-ui/playwright-video/frame?id=" + encodeURIComponent(r.id) + "&frame=" + encodeURIComponent(name))
+      .then(function (v) {
+        frames[name] = "data:image/png;base64," + v.base64;
+        return frames[name];
+      });
+  }
+  function pickCodec(W, H) {
+    // Highest profile first; resolves null when H.264 encoding is missing.
+    var codecs = ["avc1.640028", "avc1.64001f", "avc1.4d0028", "avc1.42e01f"];
+    var idx = 0;
+    function tryNext() {
+      if (idx >= codecs.length) return Promise.resolve(null);
+      var cfg = {
+        codec: codecs[idx++], width: W, height: H,
+        bitrate: 5000000, framerate: EXPORT_FPS, avc: { format: "avc" }
+      };
+      return VideoEncoder.isConfigSupported(cfg).then(function (sup) {
+        return sup.supported ? cfg : tryNext();
+      }, tryNext);
+    }
+    return tryNext();
+  }
+  // One canvas frame at real time t: letterboxed screenshot, cursor dot,
+  // click ripple, and the action caption (mirrors the stage overlay).
+  function drawExportFrame(ctx, W, H, img, r, t) {
+    ctx.fillStyle = "#ece8f6";
+    ctx.fillRect(0, 0, W, H);
+    var s = Math.min(W / img.naturalWidth, H / img.naturalHeight);
+    var dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+    var dx = (W - dw) / 2, dy = (H - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    var k = Math.max(1, dw / 900);
+    var st = cursorState(r, t);
+    if (st) {
+      if (st.down) {
+        ctx.beginPath();
+        ctx.arc(dx + st.down.fx * dw, dy + st.down.fy * dh, (5 + 13 * st.down.age) * k, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(108,92,231," + Math.max(0, 1 - st.down.age).toFixed(2) + ")";
+        ctx.lineWidth = 2 * k;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(dx + st.fx * dw, dy + st.fy * dh, 7 * k, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(108,92,231,.85)";
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2 * k;
+      ctx.stroke();
+    }
+    var si = -1;
+    for (var i = 0; i < r.steps.length; i++) {
+      if (r.steps[i].ts_ms - r.started_ms <= t) si = i;
+    }
+    if (si >= 0) {
+      var act = r.steps[si].action || "";
+      var tgt = r.steps[si].target || "";
+      if (tgt.length > 90) tgt = tgt.slice(0, 87) + "...";
+      var fs = Math.round(13 * k);
+      var bold = "600 " + fs + "px sans-serif";
+      var norm = fs + "px sans-serif";
+      ctx.font = bold;
+      var aw = ctx.measureText(act).width;
+      ctx.font = norm;
+      var tw = tgt ? ctx.measureText(" " + tgt).width : 0;
+      var pad = 10 * k;
+      var bw = Math.min(aw + tw + pad * 2, W * 0.72);
+      var bh = fs + pad * 1.3;
+      var bx = 12 * k, by = H - 12 * k - bh;
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 8 * k);
+        ctx.fill();
+      } else {
+        ctx.fillRect(bx, by, bw, bh);
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(bx, by, bw, bh);
+      ctx.clip();
+      var ty = by + bh / 2 + fs * 0.35;
+      ctx.font = bold;
+      ctx.fillStyle = "#6c5ce7";
+      ctx.fillText(act, bx + pad, ty);
+      if (tgt) {
+        ctx.font = norm;
+        ctx.fillStyle = "#23263a";
+        ctx.fillText(" " + tgt, bx + pad + aw, ty);
+      }
+      ctx.restore();
+    }
+  }
+  async function runExport() {
+    var r = run;
+    var rp = realPts.slice(), vp = virtPts.slice(), vs = vspan;
+    function realOfX(v) {
+      if (v <= 0) return 0;
+      for (var i = 1; i < vp.length; i++) {
+        if (v <= vp[i]) {
+          var vg = vp[i] - vp[i - 1];
+          var g = rp[i] - rp[i - 1];
+          return rp[i - 1] + (vg ? (v - vp[i - 1]) / vg * g : 0);
+        }
+      }
+      return rp[rp.length - 1];
+    }
+    var frameSteps = [];
+    for (var i = 0; i < r.steps.length; i++) {
+      if (r.steps[i].frame) frameSteps.push({ t: r.steps[i].ts_ms - r.started_ms, name: r.steps[i].frame });
+    }
+    if (!frameSteps.length) { setExportStat("No frames recorded — nothing to export.", true); return; }
+    // Fetch every frame up front into a local map: openRun() resets the
+    // shared cache, which must not yank frames out from under the encoder.
+    var frameData = {};
+    for (i = 0; i < frameSteps.length; i++) {
+      if (exportCancel) { setExportStat("Export canceled."); return; }
+      setExportStat("Fetching frames " + (i + 1) + "/" + frameSteps.length);
+      frameData[frameSteps[i].name] = await fetchFrameData(r, frameSteps[i].name);
+    }
+    var first = await loadImage(frameData[frameSteps[0].name]);
+    var scale = Math.min(1, 1920 / first.naturalWidth, 1080 / first.naturalHeight);
+    var W = Math.round(first.naturalWidth * scale / 2) * 2;
+    var H = Math.round(first.naturalHeight * scale / 2) * 2;
+    var cfg = await pickCodec(W, H);
+    if (!cfg) { setExportStat("This browser has no H.264 encoder (WebCodecs) — try Chrome or Edge.", true); return; }
+    var target = new Mp4Muxer.ArrayBufferTarget();
+    var muxer = new Mp4Muxer.Muxer({
+      target: target,
+      video: { codec: "avc", width: W, height: H, frameRate: EXPORT_FPS },
+      fastStart: "in-memory"
+    });
+    var encErr = null;
+    var enc = new VideoEncoder({
+      output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); },
+      error: function (e) { encErr = e; }
+    });
+    try {
+      enc.configure(cfg);
+      var canvas = document.createElement("canvas");
+      canvas.width = W;
+      canvas.height = H;
+      var ctx = canvas.getContext("2d");
+      var stepMs = 1000 / EXPORT_FPS;
+      var total = Math.max(1, Math.ceil(vs / stepMs));
+      var img = first, curName = frameSteps[0].name;
+      for (i = 0; i <= total; i++) {
+        if (exportCancel) { setExportStat("Export canceled."); return; }
+        if (encErr) throw encErr;
+        var v = Math.min(vs, i * stepMs);
+        var t = realOfX(v);
+        var want = null;
+        for (var f = 0; f < frameSteps.length; f++) {
+          if (frameSteps[f].t <= t) want = frameSteps[f].name;
+        }
+        if (want && want !== curName) {
+          img = await loadImage(frameData[want]);
+          curName = want;
+        }
+        if (want) {
+          drawExportFrame(ctx, W, H, img, r, t);
+        } else {
+          ctx.fillStyle = "#ece8f6";
+          ctx.fillRect(0, 0, W, H);
+        }
+        var vf = new VideoFrame(canvas, { timestamp: Math.round(v * 1000), duration: Math.round(1000000 / EXPORT_FPS) });
+        enc.encode(vf, { keyFrame: i % 90 === 0 });
+        vf.close();
+        while (enc.encodeQueueSize > 4) { await sleep(4); }
+        if (i % 10 === 0) {
+          setExportStat("Rendering " + Math.round(i / total * 100) + "% (" + i + "/" + total + " frames)");
+          await sleep(0);
+        }
+      }
+      await enc.flush();
+      muxer.finalize();
+      var blob = new Blob([target.buffer], { type: "video/mp4" });
+      var slug = (r.name || "test-run").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "test-run";
+      var a = document.createElement("a");
+      var url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = slug + ".mp4";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+      setExportStat("Saved " + a.download + " (" + fmtBytes(blob.size) + ")");
+    } finally {
+      try { if (enc.state !== "closed") enc.close(); } catch (_e) { /* already closed */ }
+    }
+  }
+  byId("export").addEventListener("click", function () {
+    if (!run) return;
+    if (exporting) { exportCancel = true; return; }
+    if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined" || typeof Mp4Muxer === "undefined") {
+      setExportStat("MP4 export needs WebCodecs — try Chrome, Edge, or a recent Safari/Firefox.", true);
+      return;
+    }
+    pause();
+    exporting = true;
+    exportCancel = false;
+    var btn = this;
+    btn.textContent = "✕ Cancel";
+    runExport().catch(function (e) {
+      setExportStat("Export failed: " + (e && e.message ? e.message : String(e)), true);
+    }).then(function () {
+      exporting = false;
+      exportCancel = false;
+      btn.textContent = "⬇ MP4";
+    });
+  });
   // keyboard
   document.addEventListener("keydown", function (e) {
     if (!run) return;
@@ -1096,3 +1347,6 @@ export const PAGE: string = `<!doctype html>
 </script>
 </body>
 </html>`;
+
+// The served page: shell, vendored muxer in its own script tag, then the app.
+export const PAGE: string = SHELL + "<script>" + MUXER_JS + "</script>" + APP;

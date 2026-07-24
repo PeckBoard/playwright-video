@@ -5,15 +5,46 @@ import { manifestJson } from "../src/manifest";
 import { PAGE } from "../src/page";
 import type { RunMeta } from "../src/host";
 
+/// Split the page into its inline <script> bodies (muxer, then the app).
+function scriptBlocks(html: string): string[] {
+  const out: string[] = [];
+  let idx = 0;
+  for (;;) {
+    const start = html.indexOf("<script>", idx);
+    if (start < 0) break;
+    const end = html.indexOf("</" + "script>", start);
+    if (end < start) throw new Error("unterminated <script>");
+    out.push(html.slice(start + "<script>".length, end));
+    idx = end + 1;
+  }
+  return out;
+}
+
 describe("player page", () => {
-  it("embeds a syntactically valid script", () => {
-    const start = PAGE.indexOf("<script>");
-    const end = PAGE.indexOf("</" + "script>");
-    expect(start).toBeGreaterThan(0);
-    expect(end).toBeGreaterThan(start);
-    const src = PAGE.slice(start + "<script>".length, end);
-    // Parse-only: constructing the Function throws on any syntax error.
-    expect(() => new Function(src)).not.toThrow();
+  it("embeds exactly two syntactically valid scripts (muxer + app)", () => {
+    const blocks = scriptBlocks(PAGE);
+    expect(blocks.length).toBe(2);
+    for (const src of blocks) {
+      // Parse-only: constructing the Function throws on any syntax error.
+      expect(() => new Function(src)).not.toThrow();
+    }
+  });
+
+  it("vendored muxer defines the Mp4Muxer global the app script uses", () => {
+    const [muxer] = scriptBlocks(PAGE);
+    // The vendored build must never contain a </script> terminator — it is
+    // inlined into the page (scriptBlocks above would also mis-split).
+    expect(muxer.toLowerCase()).not.toContain("</scr" + "ipt");
+    const kinds = new Function(
+      muxer + "; return [typeof Mp4Muxer, typeof Mp4Muxer.Muxer, typeof Mp4Muxer.ArrayBufferTarget];",
+    )() as string[];
+    expect(kinds).toEqual(["object", "function", "function"]);
+  });
+
+  it("wires the MP4 export UI", () => {
+    expect(PAGE).toContain('<button id="export"');
+    expect(PAGE).toContain("VideoEncoder.isConfigSupported");
+    expect(PAGE).toContain("Mp4Muxer.ArrayBufferTarget");
   });
 });
 

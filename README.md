@@ -43,6 +43,15 @@ below Sessions) that opens a full-page replay view:
 - **Event timeline** — human-readable step list (navigation, clicks, typed
   text, rage-click detection) with click-to-seek, plus a **Session
   details** tab (session/project/card, duration, counts).
+- **MP4 export** — the player bar's *⬇ MP4* button renders the replay
+  (frames, cursor, click ripples, action captions) to an H.264 MP4 fully
+  client-side — WebCodecs `VideoEncoder` plus a vendored
+  [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) build
+  (`src/vendor/mp4-muxer.txt`, MIT) — and downloads it as
+  `<run-name>.mp4`. Honors the *Skipping inactivity* toggle, 30 fps, capped
+  at 1080p. Needs a browser with WebCodecs H.264 encoding (Chrome/Edge,
+  recent Safari/Firefox) and a core newer than 0.0.132 (the plugin iframe
+  sandbox needs `allow-downloads` for the file to leave the page).
 
 Runs recorded by older cores (no capture) still replay — the network and
 console panels show an explanatory empty state.
@@ -60,8 +69,9 @@ console panels show an explanatory empty state.
 
 ```bash
 npm install
-npm test
-npm run build   # dist/plugin.wasm
+npm test          # unit tests (page/manifest/http)
+npm run test:e2e  # real-chromium export test: encodes an MP4, validates with ffprobe
+npm run build     # dist/plugin.wasm
 ```
 
 Release asset must be named `playwright-video.wasm`.
