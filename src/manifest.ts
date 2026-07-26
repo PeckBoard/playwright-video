@@ -8,7 +8,7 @@ const DESCRIPTION =
   "time-scaled playback with inactivity skipping, and one-click MP4 export " +
   "of a run (WebCodecs H.264, encoded fully client-side). Served as a WASM " +
   "plugin.";
-const VERSION = "0.4.0";
+const VERSION = "0.4.1";
 const REPOSITORY = "https://github.com/PeckBoard/playwright-video";
 
 // Inline SVG (lucide "video") for the sidebar entry; rendered sandboxed.

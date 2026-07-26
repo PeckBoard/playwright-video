@@ -459,6 +459,10 @@ const APP: string = `<script>
       if (!activeRunId && runs.length) openRun(runs[0].id);
     }).catch(function () { /* transient; next refresh retries */ });
   }
+  // Deep link from a chat tool card: ?run=<id> opens that run instead of
+  // auto-opening the newest one.
+  var deepLinkRun = new URLSearchParams(location.search).get("run");
+  if (deepLinkRun) openRun(deepLinkRun);
   loadRuns();
   // The parent fetch bridge may not be listening yet on the very first
   // call — retry quickly before settling into the slow refresh.
