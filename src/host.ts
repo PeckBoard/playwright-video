@@ -66,6 +66,13 @@ export interface PointerEvent {
 
 /// One recorded browser test run (mirrors core's `RunMeta`). The capture
 /// fields are absent on runs recorded before network capture existed.
+///
+/// From `peckboard_browser_runs`, newer cores return slim summaries instead
+/// (core's `RunSummary`): steps without `target`/`detail`, no
+/// `network`/`console_events`/`pointer_events`, plus precomputed
+/// `request_count`/`error_count` — full metas OOMed the wasm instance once
+/// enough runs accumulated. `peckboard_browser_run` always returns the full
+/// meta.
 export interface RunMeta {
   id: string;
   name: string;
@@ -81,6 +88,9 @@ export interface RunMeta {
   network_truncated?: number;
   console_truncated?: number;
   pointer_events?: PointerEvent[];
+  /// Precomputed by newer cores on list summaries only.
+  request_count?: number;
+  error_count?: number;
   pointer_truncated?: number;
 }
 

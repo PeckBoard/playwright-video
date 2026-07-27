@@ -48,21 +48,27 @@ export function serveAuthed(payload: any): string {
 /// full run on open) — keeps the list payload small for many runs.
 export function summarizeRuns(): any {
   const { runs } = listRuns();
+  return { runs: runs.map(summarizeRun) };
+}
+
+/// One run's list entry. Core ≥ the `RunSummary` change hands us slim
+/// summaries with precomputed `request_count`/`error_count` (and no
+/// `network`/`console_events`); older cores hand full metas — fall back to
+/// computing the counts ourselves.
+export function summarizeRun(r: import("./host").RunMeta): any {
   return {
-    runs: runs.map((r) => ({
-      id: r.id,
-      name: r.name,
-      url: r.url,
-      session_id: r.session_id,
-      project_id: r.project_id ?? null,
-      card_id: r.card_id ?? null,
-      started_ms: r.started_ms,
-      ended_ms: r.ended_ms ?? null,
-      step_count: r.steps.length,
-      frame_count: r.steps.filter((s) => !!s.frame).length,
-      request_count: (r.network ?? []).length,
-      error_count: countErrors(r),
-    })),
+    id: r.id,
+    name: r.name,
+    url: r.url,
+    session_id: r.session_id,
+    project_id: r.project_id ?? null,
+    card_id: r.card_id ?? null,
+    started_ms: r.started_ms,
+    ended_ms: r.ended_ms ?? null,
+    step_count: r.steps.length,
+    frame_count: r.steps.filter((s) => !!s.frame).length,
+    request_count: r.request_count ?? (r.network ?? []).length,
+    error_count: r.error_count ?? countErrors(r),
   };
 }
 

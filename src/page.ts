@@ -457,7 +457,15 @@ const APP: string = `<script>
       });
       // Land in content, not an empty player: auto-open the newest run.
       if (!activeRunId && runs.length) openRun(runs[0].id);
-    }).catch(function () { /* transient; next refresh retries */ });
+    }).catch(function (e) {
+      // Surface the failure instead of an unexplained blank sidebar; the
+      // early retries and the 15s refresh keep retrying.
+      if (!runlist.firstChild) {
+        var empty = byId("empty");
+        empty.hidden = false;
+        empty.textContent = "Couldn't load runs: " + e.message + " — retrying…";
+      }
+    });
   }
   // Deep link from a chat tool card: ?run=<id> opens that run instead of
   // auto-opening the newest one.

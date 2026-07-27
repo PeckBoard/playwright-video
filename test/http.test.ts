@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { queryParam, countErrors } from "../src/http";
+import { queryParam, countErrors, summarizeRun } from "../src/http";
 import { manifestJson } from "../src/manifest";
 import { PAGE } from "../src/page";
 import type { RunMeta } from "../src/host";
@@ -99,4 +99,45 @@ describe("countErrors", () => {
   it("treats capture-less legacy runs as error-free", () => {
     expect(countErrors(base)).toBe(0);
   });
+
+describe("summarizeRun", () => {
+  const base: RunMeta = {
+    id: "r1",
+    name: "t",
+    url: "u",
+    session_id: "s",
+    started_ms: 0,
+    steps: [
+      { n: 0, ts_ms: 0, action: "open", frame: "0000.png" },
+      { n: 1, ts_ms: 5, action: "click" },
+    ],
+  };
+
+  it("uses core-precomputed counts from a slim RunSummary payload", () => {
+    const s = summarizeRun({ ...base, request_count: 41, error_count: 7 });
+    expect(s.request_count).toBe(41);
+    expect(s.error_count).toBe(7);
+    expect(s.step_count).toBe(2);
+    expect(s.frame_count).toBe(1);
+  });
+
+  it("falls back to computing counts from a legacy full meta", () => {
+    const s = summarizeRun({
+      ...base,
+      network: [
+        { id: 1, ts_ms: 0, method: "GET", url: "a", resource_type: "xhr", status: 500 },
+        { id: 2, ts_ms: 0, method: "GET", url: "b", resource_type: "xhr", status: 200 },
+      ],
+      console_events: [{ ts_ms: 0, level: "error", text: "boom" }],
+    });
+    expect(s.request_count).toBe(2);
+    expect(s.error_count).toBe(2);
+  });
+
+  it("handles a capture-less legacy meta (no network fields at all)", () => {
+    const s = summarizeRun(base);
+    expect(s.request_count).toBe(0);
+    expect(s.error_count).toBe(0);
+  });
+});
 });
