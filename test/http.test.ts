@@ -5,7 +5,7 @@ import { manifestJson } from "../src/manifest";
 import { PAGE } from "../src/page";
 import type { RunMeta } from "../src/host";
 
-/// Split the page into its inline <script> bodies (muxer, then the app).
+/// Split the page into its inline <script> bodies (theme stamp, muxer, app).
 function scriptBlocks(html: string): string[] {
   const out: string[] = [];
   let idx = 0;
@@ -21,17 +21,23 @@ function scriptBlocks(html: string): string[] {
 }
 
 describe("player page", () => {
-  it("embeds exactly two syntactically valid scripts (muxer + app)", () => {
+  it("embeds exactly three syntactically valid scripts (theme stamp, muxer, app)", () => {
     const blocks = scriptBlocks(PAGE);
-    expect(blocks.length).toBe(2);
+    expect(blocks.length).toBe(3);
     for (const src of blocks) {
       // Parse-only: constructing the Function throws on any syntax error.
       expect(() => new Function(src)).not.toThrow();
     }
   });
 
+  it("stamps the ?theme= override onto <html> before the styles apply", () => {
+    const [stamp] = scriptBlocks(PAGE);
+    expect(stamp).toContain('get("theme")');
+    expect(stamp).toContain("dataset.theme");
+  });
+
   it("vendored muxer defines the Mp4Muxer global the app script uses", () => {
-    const [muxer] = scriptBlocks(PAGE);
+    const [, muxer] = scriptBlocks(PAGE);
     // The vendored build must never contain a </script> terminator — it is
     // inlined into the page (scriptBlocks above would also mis-split).
     expect(muxer.toLowerCase()).not.toContain("</scr" + "ipt");
