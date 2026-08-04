@@ -405,6 +405,10 @@ const APP: string = `<script>
   var drawerIdx = -1;
   var liveTimer = null;
   var GAP_CAP = 4000;
+  // Same 760px breakpoint as the CSS: the stacked mobile layout scrolls the
+  // document itself, so following the active event row would push the stage
+  // off-screen — the follow-scroll is desktop-only.
+  var stackedMq = window.matchMedia("(max-width: 760px)");
 
   // ── time map: real ↔ virtual with inactivity compression ──
   function buildTimeMap() {
@@ -1076,7 +1080,7 @@ const APP: string = `<script>
       else if (e === si) cls2 += " now";
       if (was !== cls2) {
         evRowEls[e].className = cls2;
-        if (e === si && playing) evRowEls[e].scrollIntoView({ block: "nearest" });
+        if (e === si && playing && !stackedMq.matches) evRowEls[e].scrollIntoView({ block: "nearest" });
       }
     }
   }
