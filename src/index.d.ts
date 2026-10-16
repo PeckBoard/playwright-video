@@ -15,6 +15,7 @@ declare module "extism:host" {
   interface user {
     peckboard_browser_runs(ptr: I64): I64;
     peckboard_browser_run(ptr: I64): I64;
+    peckboard_browser_run_dom(ptr: I64): I64;
     peckboard_browser_run_frame(ptr: I64): I64;
   }
 }

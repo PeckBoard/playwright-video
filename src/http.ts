@@ -2,7 +2,7 @@
 // the authenticated app-UI endpoints (`http.request.authed`) the page calls.
 
 import { htmlResponse, jsonResponse } from "./verdict";
-import { listRuns, getRun, getFrame } from "./host";
+import { listRuns, getRun, getFrame, getDom } from "./host";
 import { PAGE } from "./page";
 import { errMsg } from "./lib";
 
@@ -37,6 +37,15 @@ export function serveAuthed(payload: any): string {
       const id = requireParam(query, "id");
       const frame = requireParam(query, "frame");
       return jsonResponse(200, getFrame(id, frame));
+    }
+    if (method === "GET" && path === "/api/plugin-ui/playwright-video/dom") {
+      const id = requireParam(query, "id");
+      const raw = queryParam(query, "offset");
+      const offset = raw === undefined || raw.trim() === "" ? 0 : Number(raw);
+      if (!Number.isFinite(offset) || offset < 0) {
+        throw new Error("`offset` must be a non-negative number");
+      }
+      return jsonResponse(200, getDom(id, offset));
     }
   } catch (e) {
     return jsonResponse(400, { error: errMsg(e) });

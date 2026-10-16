@@ -92,6 +92,9 @@ export interface RunMeta {
   request_count?: number;
   error_count?: number;
   pointer_truncated?: number;
+  has_dom?: boolean;
+  dom_truncated?: number;
+  dom_bytes?: number;
 }
 
 /// All recorded runs, newest first.
@@ -107,4 +110,12 @@ export function getRun(runId: string): { run: RunMeta } {
 /// One frame's PNG bytes as base64.
 export function getFrame(runId: string, frame: string): { base64: string } {
   return hostCall("peckboard_browser_run_frame", { run_id: runId, frame });
+}
+
+/// One chunk of rrweb DOM events (byte offset into the run's dom.jsonl).
+export function getDom(
+  runId: string,
+  offset: number,
+): { events: unknown[]; next_offset: number; eof: boolean; truncated: boolean } {
+  return hostCall("peckboard_browser_run_dom", { run_id: runId, offset });
 }

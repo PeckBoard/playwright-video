@@ -1,13 +1,14 @@
 {
   "name": "peckboard-playwright-video-plugin",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "private": true,
   "description": "Peckboard playwright-video WASM plugin (Extism js-pdk / TypeScript) — LogRocket-style replay of recorded browser test runs, with client-side MP4 export",
   "scripts": {
     "bundle": "node esbuild.js",
     "build": "node esbuild.js && extism-js dist/index.js -i src/index.d.ts -o dist/plugin.wasm",
     "test": "vitest run",
-    "test:e2e": "node test/export.e2e.mjs"
+    "test:e2e": "node test/export.e2e.mjs",
+    "test:dom": "node test/dom-replay.e2e.mjs"
   },
   "devDependencies": {
     "@extism/js-pdk": "^1.1.1",

@@ -3,12 +3,12 @@
 
 const DESCRIPTION =
   "Playwright test videos for Peckboard: LogRocket-style replay of recorded " +
-  "browser test runs — network waterfall with masked request/response " +
-  "detail, console panel, event timeline, cursor replay with click ripples, " +
-  "time-scaled playback with inactivity skipping, and one-click MP4 export " +
-  "of a run (WebCodecs H.264, encoded fully client-side). Served as a WASM " +
-  "plugin.";
-const VERSION = "0.4.4";
+  "browser test runs — the page itself replayed from a DOM recording (rrweb), " +
+  "network waterfall with masked request/response detail, console panel, " +
+  "event timeline, playback that jumps over inactivity, and one-click MP4 " +
+  "export of a run (WebCodecs H.264, encoded fully client-side). Served as " +
+  "a WASM plugin.";
+const VERSION = "0.5.0";
 const REPOSITORY = "https://github.com/PeckBoard/playwright-video";
 
 // Inline SVG (lucide "video") for the sidebar entry; rendered sandboxed.
@@ -45,6 +45,7 @@ export function manifestJson(): string {
       "GET /api/plugin-ui/playwright-video/runs",
       "GET /api/plugin-ui/playwright-video/run",
       "GET /api/plugin-ui/playwright-video/frame",
+      "GET /api/plugin-ui/playwright-video/dom",
     ],
 
     permissions: [

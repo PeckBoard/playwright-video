@@ -5,7 +5,9 @@ LogRocket-style replay for PeckBoard's browser tests, served as a WASM plugin.
 PeckBoard core (>= 0.0.53) records every `browser_*` tool session as a test
 run: each `browser_open` starts a run, every `browser_act` appends a
 timestamped step with a server-side screenshot frame, and `browser_close`
-finalizes it. Frames are captured out of the agent's token budget — they
+finalizes it. **Plugin 0.5.0 requires core >= 0.1.90** (it imports
+`peckboard_browser_run_dom` and will not load on older cores — those stay on
+plugin <= 0.4.4). Frames are captured out of the agent's token budget — they
 never enter model context.
 
 Cores with the capture sidecar additionally record, per run:
@@ -16,6 +18,12 @@ Cores with the capture sidecar additionally record, per run:
 - **Pointer activity** — throttled mousemove plus mousedown positions
   (Playwright's high-level click/hover drive the real mouse, so agent
   actions are included).
+- **DOM** (core >= 0.1.90) — a continuous rrweb recording (`@rrweb/record`
+  2.1.7). When a run has DOM events the player uses `@rrweb/replay` 2.1.7 as
+  the clock (play, pause, speed, skip-inactivity). Network, console, and the
+  event timeline follow real time. Runs without DOM stay on the screenshot
+  player, cursor included. A run that hit the storage cap says so in Session
+  details.
 
 All captured strings are masked by core (`service/redact.rs`) **before they
 are persisted**: sensitive headers (authorization, cookies, API keys),
@@ -51,7 +59,10 @@ below Sessions) that opens a full-page replay view:
   `<run-name>.mp4`. Honors the *Skipping inactivity* toggle, 30 fps, capped
   at 1080p. Needs a browser with WebCodecs H.264 encoding (Chrome/Edge,
   recent Safari/Firefox) and a core newer than 0.0.132 (the plugin iframe
-  sandbox needs `allow-downloads` for the file to leave the page).
+DOM replay loads styles and images from their original URLs. If the app
+under test is down, the replay looks unstyled. Canvas and cross-origin
+iframes are not recorded. MP4 export stays on the screenshot frames even
+when a DOM recording exists.
 
 Runs recorded by older cores (no capture) still replay — the network and
 console panels show an explanatory empty state.
@@ -60,10 +71,16 @@ console panels show an explanatory empty state.
 
 - Core host functions (gated by the `browser_runs_read` permission):
   `peckboard_browser_runs`, `peckboard_browser_run`,
-  `peckboard_browser_run_frame`.
+  `peckboard_browser_run_frame`, `peckboard_browser_run_dom`.
 - The page is a sandboxed iframe; data flows through the parent-proxied
   `/api/plugin-ui/playwright-video/*` endpoints this plugin serves via the
   `http.request.authed` hook.
+- The sandbox (no `allow-same-origin`) cannot read a nested iframe's
+  document, so the vendored replayer (`src/vendor/rrweb-replay.txt`) mounts
+  the rebuilt page in a shadow root instead. The shadow root keeps the
+  recorded page's CSS and the player's CSS apart, and a sanitizer strips
+  scripts, inline event handlers, and `javascript:` URLs before anything
+  is attached.
 
 ## Build
 
@@ -71,6 +88,7 @@ console panels show an explanatory empty state.
 npm install
 npm test          # unit tests (page/manifest/http)
 npm run test:e2e  # real-chromium export test: encodes an MP4, validates with ffprobe
+npm run test:dom  # real-chromium DOM replay inside the production plugin sandbox
 npm run build     # dist/plugin.wasm
 ```
 

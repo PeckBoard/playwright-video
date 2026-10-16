@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { queryParam, countErrors, summarizeRun } from "../src/http";
+import { queryParam, countErrors, summarizeRun, serveAuthed } from "../src/http";
 import { manifestJson } from "../src/manifest";
 import { PAGE } from "../src/page";
 import type { RunMeta } from "../src/host";
 
-/// Split the page into its inline <script> bodies (theme stamp, muxer, app).
+/// Split the page into its executable inline <script> bodies (theme stamp,
+/// muxer, app). The replay frame's inert text/plain blocks don't match.
 function scriptBlocks(html: string): string[] {
   const out: string[] = [];
   let idx = 0;
@@ -18,6 +19,20 @@ function scriptBlocks(html: string): string[] {
     idx = end + 1;
   }
   return out;
+}
+
+/// Body of one inert `<script type="text/plain" id=...>` block.
+function inertBlock(html: string, id: string): string {
+  const open = '<script type="text/plain" id="' + id + '">';
+  const start = html.indexOf(open);
+  if (start < 0) throw new Error("missing block " + id);
+  const end = html.indexOf("</" + "script>", start);
+  return html.slice(start + open.length, end);
+}
+
+function responseBody(raw: string): { status: number; body: any } {
+  const v = JSON.parse(raw);
+  return { status: v.payload.status, body: JSON.parse(v.payload.body) };
 }
 
 describe("player page", () => {
@@ -34,6 +49,23 @@ describe("player page", () => {
     const [stamp] = scriptBlocks(PAGE);
     expect(stamp).toContain('get("theme")');
     expect(stamp).toContain("dataset.theme");
+  });
+
+  it("ships the replay frame sources as inert blocks with no script terminator", () => {
+    const replay = inertBlock(PAGE, "rrweb-replay-src");
+    const boot = inertBlock(PAGE, "replay-boot-src");
+    const css = inertBlock(PAGE, "rrweb-replay-css");
+    for (const s of [replay, boot, css]) expect(s.toLowerCase()).not.toContain("</scr" + "ipt");
+    const kind = new Function(replay + "; return typeof rrwebReplay.Replayer;")() as string;
+    expect(kind).toBe("function");
+    expect(() => new Function(boot)).not.toThrow();
+    expect(css).toContain(".replayer-mouse");
+  });
+
+  it("locks the replay frame down: scripts-only sandbox and a nonce CSP", () => {
+    expect(PAGE).toContain('rf.setAttribute("sandbox", "allow-scripts")');
+    expect(PAGE).toContain("script-src 'nonce-");
+    expect(PAGE).toContain("connect-src 'none'");
   });
 
   it("vendored muxer defines the Mp4Muxer global the app script uses", () => {
@@ -71,7 +103,69 @@ describe("manifest", () => {
     expect(m.sidebar_items[0].icon).toContain('stroke="currentColor"');
     expect(m.hooks).toContain("http.request.authed");
     expect(m.ui_routes).toContain("GET /api/plugin-ui/playwright-video/frame");
+    expect(m.ui_routes).toContain("GET /api/plugin-ui/playwright-video/dom");
+    expect(m.version).toBe("0.5.0");
     expect(m.permissions).toContain("browser_runs_read");
+  });
+});
+
+describe("dom route", () => {
+  function installHost(handler: (input: any) => any) {
+    const store = new Map<number, string>();
+    let n = 1;
+    (globalThis as any).Memory = {
+      fromString(s: string) {
+        const offset = n++;
+        store.set(offset, s);
+        return { offset };
+      },
+      find(offset: number) {
+        return { readString: () => store.get(Number(offset)) ?? "" };
+      },
+    };
+    (globalThis as any).Host = {
+      getFunctions() {
+        return {
+          peckboard_browser_run_dom(offset: number) {
+            const input = JSON.parse(store.get(Number(offset)) ?? "{}");
+            const mem = (globalThis as any).Memory.fromString(JSON.stringify(handler(input)));
+            return mem.offset;
+          },
+        };
+      },
+    };
+  }
+
+  it("rejects a missing id", () => {
+    const res = responseBody(
+      serveAuthed({
+        method: "GET",
+        path: "/api/plugin-ui/playwright-video/dom",
+        query: "",
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toContain("id");
+  });
+
+  it("passes offset through and forwards eof", () => {
+    let seen: any = null;
+    installHost((input) => {
+      seen = input;
+      return { events: [{ type: 4 }], next_offset: 40, eof: true, truncated: false };
+    });
+    const res = responseBody(
+      serveAuthed({
+        method: "GET",
+        path: "/api/plugin-ui/playwright-video/dom",
+        query: "id=run-1&offset=40",
+      }),
+    );
+    expect(seen).toEqual({ run_id: "run-1", offset: 40 });
+    expect(res.status).toBe(200);
+    expect(res.body.eof).toBe(true);
+    expect(res.body.next_offset).toBe(40);
+    expect(res.body.events).toEqual([{ type: 4 }]);
   });
 });
 
@@ -105,6 +199,7 @@ describe("countErrors", () => {
   it("treats capture-less legacy runs as error-free", () => {
     expect(countErrors(base)).toBe(0);
   });
+});
 
 describe("summarizeRun", () => {
   const base: RunMeta = {
@@ -145,5 +240,4 @@ describe("summarizeRun", () => {
     expect(s.request_count).toBe(0);
     expect(s.error_count).toBe(0);
   });
-});
 });
